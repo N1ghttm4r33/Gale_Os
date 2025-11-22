@@ -1,10 +1,10 @@
-🌪️ GaleOS
+# 🌪️ GaleOS
 
 GaleOS é um kernel bare-metal escrito em Rust para arquitetura x86_64. O projeto foca na implementação segura de gerenciamento de memória e tratamento de interrupções, utilizando as abstrações modernas do Rust sem depender da biblioteca padrão (no_std).
 
-🚀 Funcionalidades Implementadas
+## 🚀 Funcionalidades Implementadas
 
-🧠 Gerenciamento de Memória Avançado
+### 🧠 Gerenciamento de Memória Avançado
 
 Diferente de tutoriais básicos, o GaleOS implementa um Alocador Híbrido (CombinedAllocator) complexo e thread-safe:
 
@@ -16,7 +16,7 @@ Page Caching: Implementa um sistema de cache para reutilização de páginas des
 
 Paging: Mapeamento de memória física com LinkedListFrameAllocator.
 
-⚡ Interrupções e Hardware
+### ⚡ Interrupções e Hardware
 
 PIC 8259 (Chained): Gerenciamento de interrupções de hardware (IRQ).
 
@@ -32,13 +32,13 @@ PS/2 Keyboard: Driver de teclado que decodifica scancodes (Set 1) e permite inte
 
 Timer: Interrupções periódicas de hardware.
 
-🖥️ Saída e Debugging
+### 🖥️ Saída e Debugging
 
 VGA Text Mode: Driver seguro (spin::Mutex + Volatile) para escrita na memória de vídeo 0xb8000. Suporta cores e posicionamento (x,y).
 
 Serial Port (UART 16550): Redirecionamento de logs e saída de testes para o host via porta serial (serial_println!).
 
-🛠️ Pré-requisitos
+## 🛠️ Pré-requisitos
 
 Você precisa da toolchain Nightly do Rust e ferramentas de compilação cruzada.
 
@@ -65,7 +65,7 @@ Linux: sudo apt install qemu-system-x86
 
 Windows/macOS: Instalar via site oficial.
 
-▶️ Compilação e Execução
+## ▶️ Compilação e Execução
 
 O projeto está configurado para rodar via cargo run, que invoca o bootimage e o QEMU automaticamente.
 
@@ -83,7 +83,7 @@ O GaleOS possui um framework de testes customizado que usa a porta serial para r
 cargo test
 
 
-📂 Estrutura do Código
+## 📂 Estrutura do Código
 
 src/main.rs: Ponto de entrada (_start via entry_point), inicialização do kernel e demonstração de alocação de memória.
 
@@ -95,7 +95,7 @@ src/gdt.rs: Configuração da GDT e TSS. Nota: Inclui correção crítica para c
 
 src/vga_buffer.rs: Driver de vídeo com suporte a macros println!.
 
-🐛 Debugging
+## 🐛 Debugging
 
 O Cargo.toml está configurado com argumentos específicos para testes (-device isa-debug-exit...). Para debugging manual, você pode rodar:
 
