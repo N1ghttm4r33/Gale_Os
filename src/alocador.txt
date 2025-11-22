@@ -1,0 +1,134 @@
+use core::alloc::{GlobalAlloc, Layout};
+use core::ptr::null_mut;
+use core::sync::atomic::{AtomicUsize, Ordering};
+use spin::Mutex;
+
+const HEAP_START: usize = 0x_4444_4444_0000;
+const HEAP_SIZE: usize = 100 * 1024; // 256 MiB
+const SUBPAGE_SIZES: [usize; 11] = [8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192];
+
+pub struct BitmapAllocator {
+    heap_start: usize,
+    heap_end: usize,
+    heap_current: AtomicUsize,
+    subpage_sizes: &'static [usize],
+    bitmaps: &'static Mutex<[Bitmap; 11]>,
+}
+
+struct Bitmap {
+    size: usize,
+    bits: &'static mut [u64],
+}
+
+impl BitmapAllocator {
+    const fn new(heap_start: usize, heap_size: usize, subpage_sizes: &'static [usize], bitmaps: &'static Mutex<[Bitmap; 11]>) -> Self {
+        BitmapAllocator {
+            heap_start,
+            heap_end: heap_start + heap_size,
+            heap_current: AtomicUsize::new(heap_start),
+            subpage_sizes,
+            bitmaps,
+
+        }
+    }
+
+    fn find_subpage_index(&self, size: usize) -> Option<usize> {
+        self.subpage_sizes.iter().position(|&s| s >= size)
+    }
+
+    fn alloc_from_bitmap(bitmap: &mut Bitmap) -> Option<usize> {
+        for (i, block) in bitmap.bits.iter_mut().enumerate() {
+            let bit_block = *block;
+            if bit_block != u64::MAX {
+                let bit_pos = bit_block.trailing_zeros() as usize;
+                *block |= 1 << bit_pos;
+                return Some(i * 64 + bit_pos);
+            }
+        }
+        None
+    }
+
+    fn dealloc_to_bitmap(bitmap: &mut Bitmap, index: usize) {
+        let bit_pos = index % 64;
+        let block_pos = index / 64;
+    
+        bitmap.bits[block_pos] &= !(1 << bit_pos);
+    }
+
+    pub unsafe fn alloc_subpage(&self, size: usize) -> *mut u8 {
+        if let Some(index) = self.find_subpage_index(size) {
+            let mut bitmaps = self.bitmaps.lock();
+            let bitmap = &mut bitmaps[index];
+            if let Some(offset) = Self::alloc_from_bitmap(bitmap) {
+                return (self.heap_start + index * 8192 + offset * bitmap.size) as *mut u8;
+            } else {
+                // Allocate a new block of memory if the bitmap is full
+                let align = bitmap.size;
+                let alloc_start = (self.heap_current.load(Ordering::SeqCst) + align - 1) & !(align - 1); // Align the pointer
+                let alloc_end = alloc_start + align;
+
+                if alloc_end <= self.heap_end {
+                    self.heap_current.store(alloc_end, Ordering::SeqCst);
+                    return alloc_start as *mut u8;
+                } else {
+                    null_mut()
+                }
+            }
+        } else {
+            null_mut() // Requested size is too large
+        }
+    }
+
+    pub unsafe fn dealloc_subpage(&self, ptr: *mut u8, size: usize) {
+        if let Some(index) = self.find_subpage_index(size) {
+            let mut bitmaps = self.bitmaps.lock();
+            let bitmap = &mut bitmaps[index];
+            let offset = (ptr as usize - self.heap_start - index * 8192) / self.subpage_sizes[index];
+            Self::dealloc_to_bitmap(bitmap, offset);
+        }
+    }
+}
+
+unsafe impl GlobalAlloc for BitmapAllocator {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        self.alloc_subpage(layout.size())
+    }
+
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        self.dealloc_subpage(ptr, layout.size())
+    }
+}
+
+use core::ptr::addr_of_mut;
+static mut VAL1: [u64; 1] = [0; 1];
+static mut VAL2: [u64; 2] = [0; 2];
+static mut VAL3: [u64; 4] = [0; 4];
+static mut VAL4: [u64; 8] = [0; 8];
+static mut VAL5: [u64; 16] = [0; 16];
+static mut VAL6: [u64; 32] = [0; 32];
+static mut VAL7: [u64; 64] = [0; 64];
+static mut VAL8: [u64; 128] = [0; 128];
+
+// Inicialização dos bitmaps para cada subpágina
+static BITMAPS: Mutex<[Bitmap; 11]> = Mutex::new([
+    Bitmap { size: 8, bits: unsafe { &mut *addr_of_mut!(VAL1) }},
+    Bitmap { size: 16, bits: unsafe { &mut *addr_of_mut!(VAL1) }},
+    Bitmap { size: 32, bits: unsafe { &mut *addr_of_mut!(VAL1) }},
+    Bitmap { size: 64, bits: unsafe { &mut *addr_of_mut!(VAL1) }},
+    Bitmap { size: 128, bits: unsafe { &mut *addr_of_mut!(VAL2) }},
+    Bitmap { size: 256, bits: unsafe { &mut *addr_of_mut!(VAL3) }},
+    Bitmap { size: 512, bits: unsafe { &mut *addr_of_mut!(VAL4) }},
+    Bitmap { size: 1024, bits: unsafe { &mut *addr_of_mut!(VAL5) }},
+    Bitmap { size: 2048, bits: unsafe { &mut *addr_of_mut!(VAL6) }},
+    Bitmap { size: 4096, bits: unsafe { &mut *addr_of_mut!(VAL7) }},
+    Bitmap { size: 8192, bits: unsafe { &mut *addr_of_mut!(VAL8) }},
+]);
+
+
+#[global_allocator]
+pub static ALLOCATOR: BitmapAllocator = BitmapAllocator::new(
+    HEAP_START,
+    HEAP_SIZE,
+    &SUBPAGE_SIZES,
+    &BITMAPS,
+);
